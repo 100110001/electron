@@ -762,11 +762,187 @@ repo: electron
 
 需要在文件中添加以下内容
 
-```
+```yml
 publish:
   provider: github
   owner: 100110001
   repo: electron
+releaseInfo:
+  # normal 弹窗 / major 强制更新
+  releaseName: 'normal'
+```
+
+
+
+
+
+### package.json
+
+```json
+    "build:win": "npm run build && electron-builder --win --config",
+```
+
+
+
+### main.js
+
+```js
+// 主进程跟渲染进程通信
+const message = {
+  version: '当前版本信息',
+  error: '检查更新出错!',
+  checking: '正在检查更新...',
+  updateAva: '检测到新版本...',
+  updateNotAva: '现在使用的就是最新版本，不用更新!',
+  updateDownloadedSuccess: '更新资源，下载成功!',
+  updateDownloadedProgress: '更新资源，下载中...'
+}
+
+// 发送消息给渲染进程
+const sendUpdateMessage = (...args) => mainWindow.webContents.send('message', ...args)
+
+// 设置自动下载为false，也就是说不开始自动下载
+autoUpdater.autoDownload = false
+// 检测下载错误
+autoUpdater.on('error', (error) => sendUpdateMessage('error', `${message.error}:${error}`))
+// 检测是否需要更新
+autoUpdater.on('checking-for-update', () => sendUpdateMessage('checking'))
+// 检测到不需要更新时,这里可以做静默处理，不给渲染进程发通知，或者通知渲染进程当前已是最新版本，不需要更新
+autoUpdater.on('update-not-available', () => sendUpdateMessage('updateNotAva'))
+// 更新下载进度,直接把当前的下载进度发送给渲染进程即可，有渲染层自己选择如何做展示
+autoUpdater.on('download-progress', (progress) =>
+  sendUpdateMessage('updateDownloadedProgress', progress)
+)
+// 检测到可以更新时
+autoUpdater.on('update-available', (info) => {
+  // 获取 版本号、发布日志
+  sendUpdateMessage('updateAva', info)
+  // 这里我们可以做一个提示，让用户自己选择是否进行更新
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: '应用有新的更新',
+      message: '发现新版本，是否现在更新？',
+      buttons: ['是', '否']
+    })
+    .then(({ response }) => {
+      if (response === 0) {
+        // 下载更新
+        autoUpdater.downloadUpdate()
+        sendUpdateMessage(message.updateAva)
+      }
+    })
+
+  // 也可以默认直接更新，二选一即可
+  // autoUpdater.downloadUpdate();
+  // sendUpdateMessage(message.updateAva);
+})
+
+// 当需要更新的内容下载完成后
+autoUpdater.on('update-downloaded', () => {
+  sendUpdateMessage('updateDownloadedSuccess')
+  // 给用户一个提示，然后重启应用；或者直接重启也可以，只是这样会显得很突兀
+  dialog
+    .showMessageBox({
+      title: '安装更新',
+      message: '更新下载完毕，应用将重启并进行安装',
+      type: 'info',
+      buttons: ['稍后提示', '立即更新']
+    })
+    .then(({ response }) => {
+      if (response === 1) {
+        autoUpdater.quitAndInstall()
+      }
+    })
+})
+
+// 我们需要主动触发一次更新检查
+ipcMain.on('checkForUpdate', () => {
+  // 当我们收到渲染进程传来的消息，主进程就就进行一次更新检查
+  autoUpdater.checkForUpdates()
+})
+
+// 当前引用的版本告知给渲染层
+ipcMain.on('checkAppVersion', () => {
+  sendUpdateMessage('version', app.getVersion())
+})
+```
+
+
+
+### preload.js
+
+```js
+const ipc = {
+  render: {
+    // 主进程发出的通知
+    send: ['checkForUpdate', 'checkAppVersion'],
+    // 渲染进程发出的通知
+    receive: ['message']
+  }
+}
+```
+
+
+
+
+
+### renderer.js
+
+```js
+
+import { onMounted, onUnmounted } from 'vue'
+import { Notification } from '@arco-design/web-vue'
+
+const NotificationConfig = {
+  id: 'update',
+  title: '检查更新',
+  content: '',
+  position: 'bottomRight'
+}
+const message = {
+  version: '当前版本信息',
+  error: '检查更新出错!',
+  checking: '正在检查更新...',
+  updateAva: '检测到新版本...',
+  updateNotAva: '现在使用的就是最新版本，不用更新!',
+  updateDownloadedSuccess: '更新资源，下载成功!',
+  updateDownloadedProgress: '更新资源，下载中...'
+}
+
+const handleCheckUpdate = () => window.electronAPI.ipcRender.send('checkAppVersion')
+
+onMounted(() => {
+  // 接收主进程发来的通知，告诉用户当前应用是否需要更新
+  window.electronAPI.ipcRender.receive('message', (type, data) => {
+    console.log('message', type, data)
+    let msg = {}
+
+    if (type == 'version') {
+      msg = Object.assign(NotificationConfig, { content: `当前版本信息: ${data}` })
+      window.electronAPI.ipcRender.send('checkForUpdate')
+    } else if (type == 'updateDownloadedProgress') {
+      const progress = parseInt(data.percent, 10)
+      msg = Object.assign(NotificationConfig, {
+        content: `${message[type]}: ${progress}%`
+      })
+    } else if (type == 'updateAva') {
+      msg = Object.assign(NotificationConfig, {
+        content: `${message[type]}: ${data.version}`
+      })
+    } else {
+      msg = Object.assign(NotificationConfig, {
+        content: message[type]
+      })
+    }
+
+    Notification.info(msg)
+  })
+})
+
+onUnmounted(() => {
+  Notification.clear()
+})
 ```
 
 

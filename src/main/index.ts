@@ -4,6 +4,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import fs from 'fs'
 import path from 'path'
 import lodash from 'lodash'
+import axios from 'axios'
+import compressing from 'compressing'
 import { autoUpdater } from 'electron-updater'
 
 import createTray from './tray'
@@ -202,6 +204,7 @@ autoUpdater.on('download-progress', (progress) =>
 )
 // 检测到可以更新时
 autoUpdater.on('update-available', (info) => {
+  const appPath = app.getAppPath()
   // 获取 版本号、发布日志
   sendUpdateMessage('updateAva', info)
   // 这里我们可以做一个提示，让用户自己选择是否进行更新
@@ -209,14 +212,15 @@ autoUpdater.on('update-available', (info) => {
     .showMessageBox({
       type: 'info',
       title: '应用有新的更新',
-      message: '发现新版本，是否现在更新？',
+      message: `发现新版本${info.version}&& ${appPath}，是否现在更新？`,
       buttons: ['是', '否']
     })
     .then(({ response }) => {
       if (response === 0) {
+        downloadAndUnzip(info)
         // 下载更新
-        autoUpdater.downloadUpdate()
-        sendUpdateMessage(message.updateAva)
+        // autoUpdater.downloadUpdate()
+        // sendUpdateMessage(message.updateAva)
       }
     })
 
@@ -250,6 +254,88 @@ ipcMain.on('checkForUpdate', () => {
 })
 
 // 当前引用的版本告知给渲染层
-ipcMain.on('checkAppVersion', () => {
+ipcMain.on('checkAppVersion', async () => {
   sendUpdateMessage('version', app.getVersion())
 })
+
+// function drawProgressBar(progress) {
+//   const progressBarLength = 20
+//   const progressChars = Math.round(progress * progressBarLength)
+//   const progressBar = '█'.repeat(progressChars) + '-'.repeat(progressBarLength - progressChars)
+//   process.stdout.clearLine(0)
+//   process.stdout.cursorTo(0)
+//   process.stdout.write(`[${progressBar}] ${Math.round(progress * 100)}%`)
+// }
+
+// 复制文件夹及其内容的函数
+function copyFolderRecursiveSync(source, target) {
+  const files = fs.readdirSync(source)
+  files.forEach(function (file) {
+    const curSource = path.join(source, file)
+    const curDest = path.join(target, file)
+    if (fs.lstatSync(curSource).isDirectory()) {
+      if (!fs.existsSync(curDest)) {
+        fs.mkdirSync(curDest)
+      }
+      copyFolderRecursiveSync(curSource, curDest)
+    } else {
+      fs.copyFileSync(curSource, curDest)
+    }
+  })
+}
+
+async function downloadAndUnzip(info = { version: '1.0.10' }) {
+  // const appPath = 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\electron-app'
+  const appPath = app.getAppPath()
+
+  // 使用 jsdelivr 加速
+  const downloadZipPath = `https://cdn.jsdelivr.net/gh/100110001/electron@${info.version}/app.zip`
+  const downloadPath = path.join(appPath, `..\\..\\resources\\app-${info.version}.zip`)
+  const unzipPath = path.join(appPath, `..\\..\\resources\\app-${info.version}`)
+
+  sendUpdateMessage({ downloadZipPath, downloadPath, unzipPath })
+
+  try {
+    axios({
+      url: downloadZipPath,
+      method: 'GET',
+      responseType: 'stream',
+      timeout: 100000,
+      onDownloadProgress: (progressEvent) => {
+        // console.log('下载进度：', Math.round(progressEvent.progress * 100) + '%')
+        sendUpdateMessage('updateDownloadedProgress', {
+          ...progressEvent,
+          percent: (progressEvent.progress as number) * 100
+        })
+      }
+    })
+      .then((response) => {
+        const file = fs.createWriteStream(downloadPath)
+        response.data.pipe(file)
+        file.on('finish', () => {
+          console.log('文件下载完成')
+          sendUpdateMessage('updateDownloadedSuccess')
+          file.close(() => {
+            compressing.zip
+              .uncompress(downloadPath, unzipPath)
+              .then(() => {
+                console.log('success')
+                const unzipFolder = path.join(appPath, '..\\..\\resources', `app-${info.version}`)
+                const targetFolder = path.join(appPath, '..\\..\\resources', 'app')
+                copyFolderRecursiveSync(unzipFolder, targetFolder)
+              })
+              .catch((err) => {
+                sendUpdateMessage('error', err)
+                console.log(err)
+              })
+          })
+        })
+      })
+      .catch((error) => {
+        console.error('下载过程中出现错误：', error)
+        sendUpdateMessage('error', error)
+      })
+  } catch (error) {
+    console.error('下载过程中出现错误：', error)
+  }
+}

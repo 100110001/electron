@@ -26,31 +26,33 @@ const handleCheckUpdate = () => window.electronAPI.ipcRender.send('checkAppVersi
 
 onMounted(() => {
   // 接收主进程发来的通知，告诉用户当前应用是否需要更新
-  window.electronAPI.ipcRender.receive('message', (type, data) => {
-    console.log('message', type, data)
-    let msg = {}
-
-    if (type == 'version') {
-      msg = Object.assign(NotificationConfig, { content: `当前版本信息: ${data}` })
-      window.electronAPI.ipcRender.send('checkForUpdate')
-    } else if (type == 'updateDownloadedProgress') {
-      const progress = parseInt(data.percent, 10)
-      msg = Object.assign(NotificationConfig, {
-        content: `${message[type]}: ${progress}%`
-      })
-    } else if (type == 'updateAva') {
-      msg = Object.assign(NotificationConfig, {
-        content: `${message[type]}: ${data.version}`
-      })
-    } else {
-      msg = Object.assign(NotificationConfig, {
-        content: message[type]
-      })
-    }
-
-    Notification.info(msg)
-  })
+  window.electronAPI.ipcRender.receive('message', receiveMessage)
 })
+
+function receiveMessage(type, data) {
+  console.log('message', type, data)
+  let msg = {}
+
+  if (type == 'version') {
+    msg = Object.assign(NotificationConfig, { content: `当前版本信息: ${data}` })
+    window.electronAPI.ipcRender.send('checkForUpdate')
+  } else if (type == 'updateDownloadedProgress') {
+    const progress = parseInt(data.percent, 10)
+    msg = Object.assign(NotificationConfig, {
+      content: `${message[type]}: ${progress}%`
+    })
+  } else if (type == 'updateAva') {
+    msg = Object.assign(NotificationConfig, {
+      content: `${message[type]}: ${data.version}`
+    })
+  } else {
+    msg = Object.assign(NotificationConfig, {
+      content: message[type]
+    })
+  }
+
+  Notification.info(msg)
+}
 
 onUnmounted(() => {
   Notification.clear()
