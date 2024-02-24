@@ -948,6 +948,20 @@ onUnmounted(() => {
 
 
 
+
+# 文件覆盖更新
+
+[Electron 应用更新]: https://juejin.cn/book/7302990019642261567/section/7304843421670506546
+[Electron 自动更新实现]: https://carljin.com/posts/electron-autoupdate/
+[electron 做仅 asar 文件自动更新]: https://blog.zeromake.com/pages/electron-auto-updater-asar/
+[jsdelivr]: https://www.jsdelivr.com/package/gh/100110001/electron?tab=files
+
+
+
+
+
+
+
 # Github与Gitee同步
 
 [仓库镜像管理]: https://help.gitee.com/repository/settings/sync-between-gitee-github
