@@ -17,6 +17,7 @@ const archive = archiver('zip', {
 archive.pipe(output)
 archive.directory('./out') // 这里false参数和上面的ignoreBase为true效果一样
 archive.directory('./resources')
+archive.append(fs.createReadStream(__dirname + '/package.json'), { name: 'package.json' })
 archive.finalize() // 完成压缩
 
 archive.on('end', () => {

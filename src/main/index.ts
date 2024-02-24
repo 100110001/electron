@@ -184,7 +184,9 @@ const message = {
   updateAva: '检测到新版本...',
   updateNotAva: '现在使用的就是最新版本，不用更新!',
   updateDownloadedSuccess: '更新资源，下载成功!',
-  updateDownloadedProgress: '更新资源，下载中...'
+  updateDownloadedProgress: '更新资源，下载中...',
+  updating: '更新中...',
+  updateCompleted: '更新成功'
 }
 
 // 发送消息给渲染进程
@@ -205,6 +207,17 @@ autoUpdater.on('download-progress', (progress) =>
 // 检测到可以更新时
 autoUpdater.on('update-available', (info) => {
   const appPath = app.getAppPath()
+  // 读取版本号
+  const manifestJSon = fs.readFileSync(path.join(appPath, '\\package.json'), 'utf-8')
+  const mainTextObj = JSON.parse(manifestJSon)
+  // 版本号
+  sendUpdateMessage({ sss: '?????', a: mainTextObj.version, b: info.version })
+
+  if (mainTextObj.version == info.version) {
+    sendUpdateMessage('updateNotAva')
+    return
+  }
+
   // 获取 版本号、发布日志
   sendUpdateMessage('updateAva', info)
   // 这里我们可以做一个提示，让用户自己选择是否进行更新
@@ -212,15 +225,19 @@ autoUpdater.on('update-available', (info) => {
     .showMessageBox({
       type: 'info',
       title: '应用有新的更新',
-      message: `发现新版本${info.version}&& ${appPath}，是否现在更新？`,
+      message: `发现新版本${info.version}，是否现在更新？`,
       buttons: ['是', '否']
     })
     .then(({ response }) => {
       if (response === 0) {
-        downloadAndUnzip(info)
-        // 下载更新
-        // autoUpdater.downloadUpdate()
-        // sendUpdateMessage(message.updateAva)
+        sendUpdateMessage({ a: app.getVersion(), b: info.version })
+        if (cersionComparison(app.getVersion(), info.version) == 'resource') {
+          downloadAndUnzip(info)
+        } else {
+          // 下载更新
+          autoUpdater.downloadUpdate()
+          sendUpdateMessage('updateDownloadedSuccess')
+        }
       }
     })
 
@@ -293,49 +310,70 @@ async function downloadAndUnzip(info = { version: '1.0.10' }) {
   const downloadPath = path.join(appPath, `..\\..\\resources\\app-${info.version}.zip`)
   const unzipPath = path.join(appPath, `..\\..\\resources\\app-${info.version}`)
 
-  sendUpdateMessage({ downloadZipPath, downloadPath, unzipPath })
+  sendUpdateMessage({ updating: 'updating', downloadZipPath, downloadPath, unzipPath })
+  axios({
+    url: downloadZipPath,
+    method: 'GET',
+    responseType: 'stream',
+    timeout: 100000,
+    onDownloadProgress: (progressEvent) => {
+      // console.log('下载进度：', Math.round(progressEvent.progress * 100) + '%')
+      sendUpdateMessage('updateDownloadedProgress', {
+        ...progressEvent,
+        percent: (progressEvent.progress as number) * 100
+      })
+    }
+  })
+    .then((response) => {
+      const file = fs.createWriteStream(downloadPath)
+      response.data.pipe(file)
+      file.on('finish', () => {
+        sendUpdateMessage('updating')
+        file.close(() => {
+          compressing.zip
+            .uncompress(downloadPath, unzipPath)
+            .then(() => {
+              const unzipFolder = path.join(appPath, '..\\..\\resources', `app-${info.version}`)
+              const targetFolder = path.join(appPath, '..\\..\\resources', 'app')
+              copyFolderRecursiveSync(unzipFolder, targetFolder)
 
-  try {
-    axios({
-      url: downloadZipPath,
-      method: 'GET',
-      responseType: 'stream',
-      timeout: 100000,
-      onDownloadProgress: (progressEvent) => {
-        // console.log('下载进度：', Math.round(progressEvent.progress * 100) + '%')
-        sendUpdateMessage('updateDownloadedProgress', {
-          ...progressEvent,
-          percent: (progressEvent.progress as number) * 100
+              sendUpdateMessage('updateDownloadedSuccess')
+              setTimeout(() => {
+                mainWindow.reload()
+              }, 3000)
+            })
+            .catch((error) => {
+              console.error('下载过程中出现错误：', error)
+              sendUpdateMessage('error', error)
+            })
         })
-      }
+      })
     })
-      .then((response) => {
-        const file = fs.createWriteStream(downloadPath)
-        response.data.pipe(file)
-        file.on('finish', () => {
-          console.log('文件下载完成')
-          sendUpdateMessage('updateDownloadedSuccess')
-          file.close(() => {
-            compressing.zip
-              .uncompress(downloadPath, unzipPath)
-              .then(() => {
-                console.log('success')
-                const unzipFolder = path.join(appPath, '..\\..\\resources', `app-${info.version}`)
-                const targetFolder = path.join(appPath, '..\\..\\resources', 'app')
-                copyFolderRecursiveSync(unzipFolder, targetFolder)
-              })
-              .catch((err) => {
-                sendUpdateMessage('error', err)
-                console.log(err)
-              })
-          })
-        })
-      })
-      .catch((error) => {
-        console.error('下载过程中出现错误：', error)
-        sendUpdateMessage('error', error)
-      })
-  } catch (error) {
-    console.error('下载过程中出现错误：', error)
+    .catch((error) => {
+      console.error('下载过程中出现错误：', error)
+      sendUpdateMessage('error', error)
+    })
+}
+
+function cersionComparison(version1, version2) {
+  const currentVersion = version1.split('.')
+  const targetVersion = version2.split('.')
+
+  // 比对两个版本号，如果前两个版本号高的话，就全量更新
+  // 如果第三个版本号高的话，就资源更新
+
+  for (let i = 0; i < currentVersion.length; i++) {
+    const v1Part = parseInt(currentVersion[i])
+    const v2Part = parseInt(targetVersion[i])
+    console.log(v1Part, v2Part)
+
+    if (v1Part < v2Part) {
+      if (i == 0 || i == 1) {
+        return 'client'
+      } else if (i == 2) {
+        return 'resource'
+      }
+    }
   }
+  return
 }

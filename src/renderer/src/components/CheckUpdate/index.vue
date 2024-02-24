@@ -10,7 +10,9 @@ const NotificationConfig = {
   id: 'update',
   title: '检查更新',
   content: '',
-  position: 'bottomRight'
+  position: 'bottomRight',
+  type: 'info',
+  duration: 3000
 }
 const message = {
   version: '当前版本信息',
@@ -19,7 +21,9 @@ const message = {
   updateAva: '检测到新版本...',
   updateNotAva: '现在使用的就是最新版本，不用更新!',
   updateDownloadedSuccess: '更新资源，下载成功!',
-  updateDownloadedProgress: '更新资源，下载中...'
+  updateDownloadedProgress: '更新资源，下载中...',
+  updating: '更新中...',
+  updateCompleted: '更新成功'
 }
 
 const handleCheckUpdate = () => window.electronAPI.ipcRender.send('checkAppVersion')
@@ -37,13 +41,19 @@ function receiveMessage(type, data) {
     msg = Object.assign(NotificationConfig, { content: `当前版本信息: ${data}` })
     window.electronAPI.ipcRender.send('checkForUpdate')
   } else if (type == 'updateDownloadedProgress') {
+    console.log('data', data)
     const progress = parseInt(data.percent, 10)
     msg = Object.assign(NotificationConfig, {
       content: `${message[type]}: ${progress}%`
     })
+  } else if (type == 'updateCompleted' || type == 'updateNotAva') {
+    msg = Object.assign(NotificationConfig, {
+      content: message[type],
+      type: 'success'
+    })
   } else if (type == 'updateAva') {
     msg = Object.assign(NotificationConfig, {
-      content: `${message[type]}: ${data.version}`
+      content: message[type]
     })
   } else {
     msg = Object.assign(NotificationConfig, {
@@ -51,7 +61,7 @@ function receiveMessage(type, data) {
     })
   }
 
-  Notification.info(msg)
+  Notification[msg.type](msg)
 }
 
 onUnmounted(() => {
