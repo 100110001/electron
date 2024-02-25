@@ -26,6 +26,14 @@ const basicRoutes = [
         },
         children: [
           {
+            path: '/index',
+            component: () => import('@renderer/views/electron/index.vue'),
+            name: '测试',
+            meta: {
+              title: 'index'
+            }
+          },
+          {
             path: '/menu',
             component: () => import('@renderer/views/electron/Menu.vue'),
             name: 'menu',
@@ -35,24 +43,6 @@ const basicRoutes = [
           }
         ]
       },
-      // {
-      //   path: '/dxcb',
-      //   component: () => import('@renderer/views/dxcb/index.vue'),
-      //   name: 'dxcb',
-      //   meta: {
-      //     title: '地下城堡',
-      //     icon: new URL(`@renderer/assets/images/dxcb.png`, import.meta.url).href
-      //   }
-      // },
-      // {
-      //   path: '/nsh',
-      //   component: () => import('@renderer/views/nsh/index.vue'),
-      //   name: 'nsh',
-      //   meta: {
-      //     title: '逆水寒',
-      //     icon: new URL(`@renderer/assets/images/nsh.png`, import.meta.url).href
-      //   }
-      // },
       {
         path: '/setting',
         component: () => import('@renderer/views/setting/index.vue'),

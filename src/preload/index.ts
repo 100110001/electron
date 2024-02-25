@@ -30,14 +30,11 @@ if (process.contextIsolated) {
       getFileData: (data, callback) => {
         const channel = new MessageChannel()
         const port1 = channel.port1
-        const port2 = channel.port2 as any
+        const port2 = channel.port2
 
         port2.postMessage(data)
         port2.onmessage = (event) => {
           callback(event.data)
-        }
-        port2.onclose = () => {
-          // console.log('stream ended')
         }
 
         ipcRenderer.postMessage('give-me-a-stream', null, [port1])

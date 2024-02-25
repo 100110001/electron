@@ -14,12 +14,19 @@ import createTray from './tray'
 import configFilePath from '../../resources/config.json?commonjs-external&asset'
 import createWorker from './worker?nodeWorker'
 import icon from '../../resources/icon.png?asset'
-import { handleFileSave, handleFileOpen } from './utils'
+import {
+  handleXlsxSave,
+  handleSelectFile,
+  copyFolderRecursiveSync,
+  cersionComparison
+} from './utils'
 
 const myWorker = createWorker({ workerData: 'worker' })
-
 let mainWindow
 let defaultConfig
+
+// 发送消息给渲染进程
+const sendUpdateMessage = (...args) => mainWindow.webContents.send('message', ...args)
 
 function createWindow() {
   const readResult = fs.readFileSync(configFilePath, 'utf8')
@@ -53,119 +60,49 @@ function createWindow() {
   // 在开发中加载远程URL，生产中加载本地HTML文件。
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.webContents.openDevTools({ mode: 'right' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
-  mainWindow.webContents.openDevTools({ mode: 'right' })
 
   createTray(mainWindow)
 
   console.log('Hello from Electron 👋👋👋')
-  ipcMain.handle('dialog:openFile', handleFileOpen)
-  ipcMain.handle('dialog:saveFile', handleFileSave)
-  ipcMain.handle('set-configuration', (_event, data) => {
-    defaultConfig = lodash.merge(defaultConfig, data)
-
-    nativeTheme.themeSource = defaultConfig.nativeTheme.themeSource
-
-    defaultConfig = lodash.merge(defaultConfig, {
-      nativeTheme: {
-        themeSource: nativeTheme.themeSource,
-        shouldUseDarkColors: nativeTheme.shouldUseDarkColors
-      }
-    })
-    if (data) {
-      fs.writeFile(configFilePath, JSON.stringify(defaultConfig), (e) => {
-        console.log('fs.writeFile', e)
-      })
-    }
-
-    mainWindow.webContents.send('get-configuration', defaultConfig)
-
-    return defaultConfig
-  })
-  ipcMain.on('give-me-a-stream', (event) => {
-    // 当我们在主进程中接收到 MessagePort 对象, 它就成为了 MessagePortMain.
-    const port = event.ports[0]
-    // MessagePortMain 使用了 Node.js 风格的事件 API, 而不是
-    // web 风格的事件 API. 因此使用 .on('message', ...) 而不是 .onmessage = ...
-    port.on('message', (event) => {
-      const { data } = event
-      myWorker.postMessage(data)
-      myWorker.on('message', (message) => {
-        port.postMessage(message)
-        port.close()
-      })
-    })
-
-    // MessagePortMain 阻塞消息直到 .start() 方法被调用
-    port.start()
-  })
-  ipcMain.on('detach:service', async (_event, { type }) => {
-    const operation = {
-      minimize: () => {
-        mainWindow.focus()
-        mainWindow.minimize()
-      },
-      maximize: () => {
-        mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
-      },
-      close: () => {
-        mainWindow.close()
-      }
-    }
-    operation[type]()
-  })
-  ipcMain.on('show-context-menu', (event) => {
-    const template = [
-      {
-        label: 'Menu Item 1',
-        click: () => {
-          event.sender.send('context-menu-command', 'menu-item-1')
-        }
-      },
-      { type: 'separator' },
-      { label: 'Menu Item 2', type: 'checkbox', checked: true }
-    ] as any
-    const menu = Menu.buildFromTemplate(template)
-    menu.popup({ window: BrowserWindow.fromWebContents(event.sender) as BrowserWindow | undefined })
-  })
 }
 
 // 当Electron完成初始化并准备创建浏览器窗口时，将调用此方法。某些API只能在此事件发生后使用。
-app
-  .whenReady()
-  .then(() => {
-    // installExtension('nhdogjmejiglipccpnnnanhbledajbpd')
-    //   .then((name) => console.log(`Added Extension:  ${name}`))
-    //   .catch((err) => console.log('An error occurred: ', err))
+app.whenReady().then(() => {
+  // installExtension('nhdogjmejiglipccpnnnanhbledajbpd')
+  //   .then((name) => console.log(`Added Extension:  ${name}`))
+  //   .catch((err) => console.log('An error occurred: ', err))
 
-    // 为Windows设置应用用户模型ID
-    electronApp.setAppUserModelId('com.electron')
+  // 为Windows设置应用用户模型ID
+  electronApp.setAppUserModelId('com.electron')
 
-    // 在开发中通过按下F12默认打开或关闭开发者工具，而在生产环境中忽略CommandOrControl + R的快捷键。
-    // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-    app.on('browser-window-created', (_, window) => {
-      optimizer.watchWindowShortcuts(window)
+  createWindow()
+
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.webContents.send('get-configuration', {
+      ...defaultConfig,
+      app: {
+        version: app.getVersion()
+      }
     })
   })
-  .then(() => {
-    createWindow()
-  })
-  .then(() => {
-    mainWindow.on('ready-to-show', () => {
-      mainWindow.webContents.send('get-configuration', defaultConfig)
-    })
-  })
-  .then(() => {
-    app.on('activate', function () {
-      // 在macOS上，当点击dock图标且没有其他窗口打开时，重新创建应用程序中的窗口是一种常见做法。
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    })
+})
 
-    // 在窗口关闭时终止 Python 服务
-    app.on('before-quit', () => {})
-  })
+// 在开发中通过按下F12默认打开或关闭开发者工具，而在生产环境中忽略CommandOrControl + R的快捷键。
+// see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+app.on('browser-window-created', (_, window) => {
+  optimizer.watchWindowShortcuts(window)
+})
+app.on('activate', function () {
+  // 在macOS上，当点击dock图标且没有其他窗口打开时，重新创建应用程序中的窗口是一种常见做法。
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+})
+
+// 在窗口关闭时终止 Python 服务
+app.on('before-quit', () => {})
 
 // 在所有窗关闭时退出应用，除了macOS系统。在macOS上，应用和菜单栏通常会保持活跃状态，直到用户使用Cmd + Q 明确退出应用。
 app.on('window-all-closed', () => {
@@ -175,6 +112,80 @@ app.on('window-all-closed', () => {
 })
 
 // 在这个文件中，你可以包括应用程序特定的主进程代码的其余部分。你也可以把它们放在单独的文件中，并在此处引用它们。
+
+ipcMain.handle('dialog:openFile', handleSelectFile)
+ipcMain.handle('dialog:saveFile', (_event, data) => handleXlsxSave(data))
+ipcMain.handle('set-configuration', (_event, data) => {
+  defaultConfig = lodash.merge(defaultConfig, data)
+
+  nativeTheme.themeSource = defaultConfig.nativeTheme.themeSource
+
+  defaultConfig = lodash.merge(defaultConfig, {
+    nativeTheme: {
+      themeSource: nativeTheme.themeSource,
+      shouldUseDarkColors: nativeTheme.shouldUseDarkColors
+    }
+  })
+  if (data) {
+    fs.writeFile(configFilePath, JSON.stringify(defaultConfig), (e) => {
+      console.log('fs.writeFile', e)
+    })
+  }
+
+  mainWindow.webContents.send('get-configuration', defaultConfig)
+
+  return defaultConfig
+})
+ipcMain.on('give-me-a-stream', (event) => {
+  // 当我们在主进程中接收到 MessagePort 对象, 它就成为了 MessagePortMain.
+  const port = event.ports[0]
+  // MessagePortMain 使用了 Node.js 风格的事件 API, 而不是
+  // web 风格的事件 API. 因此使用 .on('message', ...) 而不是 .onmessage = ...
+  port.on('message', (event) => {
+    const { data } = event
+    myWorker.postMessage(data)
+    myWorker.on('message', (message) => {
+      port.postMessage(message)
+      port.close()
+    })
+  })
+
+  // MessagePortMain 阻塞消息直到 .start() 方法被调用
+  port.start()
+})
+ipcMain.on('detach:service', async (_event, { type }) => {
+  const operation = {
+    minimize: () => {
+      mainWindow.focus()
+      mainWindow.minimize()
+    },
+    maximize: () => {
+      mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+    },
+    close: () => {
+      mainWindow.close()
+    }
+  }
+  operation[type]()
+})
+ipcMain.on('show-context-menu', (event) => {
+  const template = [
+    {
+      label: 'Menu Item 1',
+      click: () => {
+        event.sender.send('context-menu-command', 'menu-item-1')
+      }
+    },
+    { type: 'separator' },
+    { label: 'Menu Item 2', type: 'checkbox', checked: true }
+  ] as any
+  const menu = Menu.buildFromTemplate(template)
+  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) as BrowserWindow | undefined })
+})
+// 我们需要主动触发一次更新检查，当我们收到渲染进程传来的消息，主进程就就进行一次更新检查
+ipcMain.on('checkForUpdate', () => autoUpdater.checkForUpdates())
+// 当前引用的版本告知给渲染层
+ipcMain.on('checkAppVersion', () => sendUpdateMessage('version', app.getVersion()))
 
 // 主进程跟渲染进程通信
 const message = {
@@ -188,9 +199,6 @@ const message = {
   updating: '更新中...',
   updateCompleted: '更新成功'
 }
-
-// 发送消息给渲染进程
-const sendUpdateMessage = (...args) => mainWindow.webContents.send('message', ...args)
 
 // 设置自动下载为false，也就是说不开始自动下载
 autoUpdater.autoDownload = false
@@ -264,43 +272,6 @@ autoUpdater.on('update-downloaded', () => {
     })
 })
 
-// 我们需要主动触发一次更新检查
-ipcMain.on('checkForUpdate', () => {
-  // 当我们收到渲染进程传来的消息，主进程就就进行一次更新检查
-  autoUpdater.checkForUpdates()
-})
-
-// 当前引用的版本告知给渲染层
-ipcMain.on('checkAppVersion', async () => {
-  sendUpdateMessage('version', app.getVersion())
-})
-
-// function drawProgressBar(progress) {
-//   const progressBarLength = 20
-//   const progressChars = Math.round(progress * progressBarLength)
-//   const progressBar = '█'.repeat(progressChars) + '-'.repeat(progressBarLength - progressChars)
-//   process.stdout.clearLine(0)
-//   process.stdout.cursorTo(0)
-//   process.stdout.write(`[${progressBar}] ${Math.round(progress * 100)}%`)
-// }
-
-// 复制文件夹及其内容的函数
-function copyFolderRecursiveSync(source, target) {
-  const files = fs.readdirSync(source)
-  files.forEach(function (file) {
-    const curSource = path.join(source, file)
-    const curDest = path.join(target, file)
-    if (fs.lstatSync(curSource).isDirectory()) {
-      if (!fs.existsSync(curDest)) {
-        fs.mkdirSync(curDest)
-      }
-      copyFolderRecursiveSync(curSource, curDest)
-    } else {
-      fs.copyFileSync(curSource, curDest)
-    }
-  })
-}
-
 async function downloadAndUnzip(info = { version: '1.0.10' }) {
   // const appPath = 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\electron-app'
   const appPath = app.getAppPath()
@@ -353,27 +324,4 @@ async function downloadAndUnzip(info = { version: '1.0.10' }) {
       console.error('下载过程中出现错误：', error)
       sendUpdateMessage('error', error)
     })
-}
-
-function cersionComparison(version1, version2) {
-  const currentVersion = version1.split('.')
-  const targetVersion = version2.split('.')
-
-  // 比对两个版本号，如果前两个版本号高的话，就全量更新
-  // 如果第三个版本号高的话，就资源更新
-
-  for (let i = 0; i < currentVersion.length; i++) {
-    const v1Part = parseInt(currentVersion[i])
-    const v2Part = parseInt(targetVersion[i])
-    console.log(v1Part, v2Part)
-
-    if (v1Part < v2Part) {
-      if (i == 0 || i == 1) {
-        return 'client'
-      } else if (i == 2) {
-        return 'resource'
-      }
-    }
-  }
-  return
 }
