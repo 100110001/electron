@@ -6,7 +6,7 @@ const basicRoutes = [
   {
     path: '/',
     component: () => import('@renderer/layouts/index.vue'),
-    redirect: '/setting',
+    redirect: '/home',
     children: [
       {
         path: '/home',
