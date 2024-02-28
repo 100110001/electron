@@ -8,7 +8,11 @@
       @collapse="onCollapse"
     >
       <div class="logo" />
-      <a-menu :selected-keys="menuState.selectedKeys" @menu-item-click="menuClick">
+      <a-menu
+        :selected-keys="menuState.selectedKeys"
+        style="user-select: none"
+        @menu-item-click="menuClick"
+      >
         <template v-for="item in menuState.items">
           <a-sub-menu v-if="item.children && item.children.length" :key="item.path">
             <template #icon>

@@ -75,22 +75,24 @@ const state = reactive({
   }
 })
 
+const baseUrl = import.meta.env.MODE === 'development' ? '/restapi' : 'https://restapi.amap.com'
+
 onMounted(() => {
   getWeatherInfo()
 })
 
 const getWeatherInfo = () => {
   axios
-    .get('/restapi/v3/ip', {
+    .get(baseUrl + '/v3/ip', {
       params: { key: '5d109a02b15ce12084f193e845532244' }
     })
     .then(({ data }) => {
       // console.log('ip', data)
       return Promise.all([
-        axios.get('/restapi/v3/weather/weatherInfo', {
+        axios.get(baseUrl + '/v3/weather/weatherInfo', {
           params: { city: data.adcode, key: '5d109a02b15ce12084f193e845532244', extensions: 'base' }
         }),
-        axios.get('/restapi/v3/weather/weatherInfo', {
+        axios.get(baseUrl + '/v3/weather/weatherInfo', {
           params: { city: data.adcode, key: '5d109a02b15ce12084f193e845532244', extensions: 'all' }
         })
       ])

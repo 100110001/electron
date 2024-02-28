@@ -522,6 +522,43 @@ port.on('message', (files) => {
 
 
 
+## 网络请求
+
+[Content Security Policy（内容安全策略]: https://www.electronjs.org/zh/docs/latest/tutorial/security#7-content-security-policy%E5%86%85%E5%AE%B9%E5%AE%89%E5%85%A8%E7%AD%96%E7%95%A5
+
+
+
+在`electron` 当中，最简单的一个方式就是在`Index.html` 中配置`Content-Security-Policy`，网络请求地址就配置`default-src 'self' https://apis.example.com`，由于使用了`Iconfont CDN`，还需要再 `script-src 'self' https://at.alicdn.com`才能使用图标
+
+```html
+index.html
+	<meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://restapi.amap.com; script-src 'self' https://at.alicdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+```
+
+
+
+如果还要使用 `proxy代理`的话，需要注意的点就是这种形式，只有开发环境中才能生效，打包之后还是不会生效，需要配置上面的代码。配置 `axios baseUrl`才能有用
+
+```js
+vite.config.ts
+    server: {
+      proxy: {
+        '/restapi': {
+          target: 'https://restapi.amap.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/restapi/, '')
+        }
+      }
+    }
+
+const baseUrl = import.meta.env.MODE === 'development' ? '/restapi' : 'https://restapi.amap.com'
+```
+
+
+
 # 关于构建
 
 [分发]: https://cn.electron-vite.org/guide/distribution

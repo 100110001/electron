@@ -33,6 +33,15 @@ export default defineConfig({
       //   brotliSize: true,
       //   filename: 'visualizer.html'
       // }) as PluginOption
-    ]
+    ],
+    server: {
+      proxy: {
+        '/restapi': {
+          target: 'https://restapi.amap.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/restapi/, '')
+        }
+      }
+    }
   }
 })
